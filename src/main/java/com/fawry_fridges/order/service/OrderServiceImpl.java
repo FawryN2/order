@@ -59,7 +59,7 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         // 6) Send notification
         // TODO: call notification-api to notify customer / merchant
 
-        return OrderMapper.toDto(order);
+        return OrderMapper.INSTANCE.toDto(order);
     }
 
 
@@ -68,7 +68,7 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
 
         Page<OrderEntity> page = orderRepo
                 .findByUserIdAndCreatedAtBetween(customerId, startDate, endDate, pageable);
-        return page.map(OrderMapper::toDto);
+        return page.map(OrderMapper.INSTANCE::toDto);
 
     }
 
@@ -93,7 +93,7 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         try {
             final OrderEntity order =   orderRepo.getReferenceById(orderId);
 
-            final OrderDto orderDto =  OrderMapper.toDto(order);
+            final OrderDto orderDto =  OrderMapper.INSTANCE.toDto(order);
             return orderDto;
         } catch (Exception e) {
             throw new OrderApiException("No order with this id");

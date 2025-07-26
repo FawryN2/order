@@ -6,12 +6,11 @@ import org.mapstruct.Mapper;
 import org.mapstruct.factory.Mappers;
 
 @Mapper
-public interface  OrderMapper {
-
+public interface OrderMapper {
 
         OrderMapper INSTANCE = Mappers.getMapper(OrderMapper.class);
 
-        static OrderDto toDto(OrderEntity entity);
+        OrderDto toDto(OrderEntity entity);
 
         OrderEntity toEntity(OrderDto dto);
 }
