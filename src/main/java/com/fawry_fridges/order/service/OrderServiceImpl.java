@@ -2,13 +2,16 @@ package com.fawry_fridges.order.service;
 
 import com.fawry_fridges.order.clients.ProductClient;
 import com.fawry_fridges.order.dto.CouponDto;
+import com.fawry_fridges.order.dto.NotificationDto;
 import com.fawry_fridges.order.dto.OrderDto;
 import com.fawry_fridges.order.dto.OrderItemDto;
+import com.fawry_fridges.order.dto.requests.ConsumeStockRequest;
+import com.fawry_fridges.order.dto.requests.CouponConsumptionRequest;
+import com.fawry_fridges.order.dto.requests.DepositRequest;
+import com.fawry_fridges.order.dto.requests.WithdrawRequest;
 import com.fawry_fridges.order.enities.OrderEntity;
 import com.fawry_fridges.order.enities.OrderItemEntity;
-
 import com.fawry_fridges.order.enities.OrderStatus;
-
 import com.fawry_fridges.order.error.OrderApiException;
 import com.fawry_fridges.order.mapper.OrderMapper;
 import com.fawry_fridges.order.repo.OrderItemRepo;
@@ -36,8 +39,6 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
     private final ProductClient productClient;
     private final RestTemplate restTemplate;
 
-    @Value("${productsService.url}")
-    private String productsUrl;
 
     @Value("${notificationService.url}")
     private String notificationsUrl;
@@ -58,16 +59,25 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
     public OrderDto createOrder(OrderDto dto) {
         validateOrder(dto);
 
-        // Reserve stock
-        reserveStock(dto.getItems());
+        // Step 1: Check availability of each item
+        checkProductAvailability(dto.getItems());
 
-        // Withdraw from customer
+        // Step 2: Consume stock for each item
+        consumeStock(dto);
+
+        // Step 3: Apply coupon (consume it if valid)
+        String couponId = dto.getCouponId();
+        if (couponId != null && !couponId.trim().isEmpty()) {
+            consumeCoupon(couponId, dto.getUserId(), dto.getId());
+        }
+
+        // Step 4: Withdraw from customer
         String withdrawalTxnId = withdrawFromCustomer(dto.getUserId(), dto.getTotalPrice(), dto);
 
-        // Deposit to merchant
+        // Step 5: Deposit to merchant
         depositToMerchant(dto.getMerchantId(), dto.getTotalPrice(), dto);
 
-        // Save order
+        // Step 6: Save order
         OrderEntity order = OrderMapper.INSTANCE.toEntity(dto);
         order.setStatus(OrderStatus.CONFIRMED);
         order.setCreatedAt(LocalDateTime.now());
@@ -80,7 +90,7 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
             orderItemRepository.save(item);
         }
 
-        // Send notification
+        // Step 7: Send notification
         sendNotification(dto.getUserId(), dto.getMerchantId());
 
         return OrderMapper.INSTANCE.toDto(order);
@@ -145,10 +155,27 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         orderDto.setDiscountTotal(discountTotal);
     }
 
+
+    private void checkProductAvailability(List<OrderItemDto> items) {
+        for (OrderItemDto item : items) {
+            try {
+                // Call GET /stocks/products/{productId}/availability
+                String availabilityUrl = stockUrl + "/products/" + item.getProductId() + "/availability";
+                Boolean isAvailable = restTemplate.getForObject(availabilityUrl, Boolean.class);
+
+                if (isAvailable == null || !isAvailable) {
+                    throw new OrderApiException("Product " + item.getProductId() + " is not available");
+                }
+            } catch (RestClientException e) {
+                throw new OrderApiException("Failed to check availability for product " + item.getProductId() + ": " + e.getMessage());
+            }
+        }
+    }
+
     private double getCouponPercent(OrderDto dto) {
         if (dto.getCouponId() != null && !dto.getCouponId().trim().isEmpty()) {
             try {
-                CouponDto couponDto = restTemplate.getForObject(couponUrl + dto.getCouponId(), CouponDto.class);
+                CouponDto couponDto = restTemplate.getForObject(couponUrl + "/consume" + dto.getCouponId(), CouponDto.class);
                 return couponDto != null ? couponDto.getPercent() : 0;
             } catch (RestClientException e) {
                 throw new OrderApiException("Failed to process coupon: " + e.getMessage());
@@ -157,70 +184,95 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         return 0;
     }
 
-    private void reserveStock(List<OrderItemDto> items) {
+
+    private void consumeCoupon(String couponId, String userId, String orderId) {
         try {
-            restTemplate.postForObject(stockUrl + "/reserve", items, Void.class);
+            // Create request body for coupon consumption
+            CouponConsumptionRequest request = new CouponConsumptionRequest();
+            request.setCustomerEmail(userId); // Assuming userId is email
+            request.setOrderId(orderId);
+
+            // Call POST /api/coupons/history to consume the coupon
+            restTemplate.postForObject(couponUrl + "/history", request, Void.class);
         } catch (RestClientException e) {
-            throw new OrderApiException("Stock reservation failed: " + e.getMessage());
+            throw new OrderApiException("Failed to consume coupon: " + e.getMessage());
         }
     }
 
-    private void releaseStock(List<OrderItemDto> items) {
+
+    private void consumeStock(OrderDto dto) {
         try {
-            restTemplate.postForObject(stockUrl + "/release", items, Void.class);
+            // For each item, call the consume stock API
+            for (OrderItemDto item : dto.getItems()) {
+                ConsumeStockRequest request = new ConsumeStockRequest();
+                request.setQuantity(item.getQuantity());
+
+                String consumeUrl = stockUrl + "/consume?storeId=" + dto.getMerchantId() + "&sku=" + item.getProductId();
+                restTemplate.postForObject(consumeUrl, request, Void.class);
+            }
         } catch (RestClientException e) {
-            log.error("Failed to release stock: {}", e.getMessage());
+            throw new OrderApiException("Stock consumption failed: " + e.getMessage());
         }
     }
 
     private String withdrawFromCustomer(String userId, double amount, OrderDto dto) {
         try {
+            WithdrawRequest request = new WithdrawRequest();
+            request.setCardNumber("4117394963435739"); // This should come from the order or user profile
+            request.setAmount(amount);
+            request.setMerchant("fawry"); // This should come from merchant info
+
             return restTemplate.postForObject(
-                    bankService + "/withdraw?userId=" + userId + "&amount=" + amount,
-                    null,
+                    bankService + "/transactions/withdraw",
+                    request,
                     String.class
             );
         } catch (RestClientException e) {
-            releaseStock(dto.getItems());
             throw new OrderApiException("Payment withdrawal failed: " + e.getMessage());
         }
     }
 
-    private void refundCustomer(String userId, double amount) {
-        try {
-            restTemplate.postForObject(
-                    bankService + "/refund?userId=" + userId + "&amount=" + amount,
-                    null,
-                    Void.class
-            );
-        } catch (RestClientException e) {
-            log.error("Failed to refund customer: {}", e.getMessage());
-        }
-    }
+
 
     private void depositToMerchant(String merchantId, double amount, OrderDto dto) {
         try {
+            DepositRequest request = new DepositRequest();
+            request.setCardNumber("4117394963435739"); // This should come from merchant info
+            request.setAmount(amount);
+
             restTemplate.postForObject(
-                    bankService + "/deposit?merchantId=" + merchantId + "&amount=" + amount,
-                    null,
+                    bankService + "/transactions/deposit",
+                    request,
                     Void.class
             );
         } catch (RestClientException e) {
-            refundCustomer(dto.getUserId(), dto.getTotalPrice());
-            releaseStock(dto.getItems());
             throw new OrderApiException("Merchant deposit failed: " + e.getMessage());
         }
     }
 
     private void sendNotification(String userId, String merchantId) {
         try {
+            NotificationDto request = new NotificationDto();
+            request.setTo("alhasan.ebrahim@outlook.com"); // This should come from user profile
+            request.setSubject("shopping");
+            request.setProduct("laptop"); // This should be dynamic based on order items
+            request.setPrice(1000); // This should be the actual order total
+
             restTemplate.postForObject(
-                    notificationsUrl + "/send?userId=" + userId + "&merchantId=" + merchantId,
-                    null,
+                    notificationsUrl ,
+                    request,
                     Void.class
             );
         } catch (RestClientException e) {
             log.error("Failed to send notification: {}", e.getMessage());
         }
     }
+
+
+
+
+
+
+
+
 }
