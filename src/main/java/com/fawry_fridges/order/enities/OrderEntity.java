@@ -43,8 +43,9 @@ public class OrderEntity {
     private Long couponId;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
+    private String merchantId;
+    private String withdrawalTxnId;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItemEntity> items;

@@ -20,6 +20,8 @@ import java.util.List;
 public class OrderDto {
     private String id;
     private Long orderNumber;
+    private String withdrawalTxnId;
+    private String merchantId;
     private String userId;
     private String shippingAddressId;
     private String paymentMethod;
@@ -27,7 +29,7 @@ public class OrderDto {
     private double totalPrice;
     private double discountTotal;
     private double shippingCost;
-    private Long couponId;
+    private String couponId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<OrderItemDto> items;
