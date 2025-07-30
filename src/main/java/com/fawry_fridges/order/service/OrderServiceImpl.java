@@ -41,7 +41,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepo orderRepo;
     private final OrderItemRepo orderItemRepository;
     private final RestTemplate restTemplate;
-
+    private final OrderMessageSender orderMessageSender;
 
     @Value("${notificationService.url}")
     private String notificationsUrl;
@@ -67,29 +67,29 @@ dto.setOrderNumber(maxOrderNumber+1);
         validateOrder(dto);
 
         // Step 1: Check availability of each item
-        checkProductAvailability(dto.getItems());
+//        checkProductAvailability(dto.getItems());
 
         // Step 2: Consume stock for each item
-        consumeStock(dto);
+//        consumeStock(dto);
 
         // Step 3: Apply coupon (consume it if valid)
         String couponId = dto.getCouponId();
         if (couponId != null && !couponId.trim().isEmpty()) {
-            consumeCoupon(couponId, dto.getUserId(), dto.getId());
+//            consumeCoupon(couponId, dto.getUserId(), dto.getId());
         }
 
         // Step 4: Withdraw from customer
-        String withdrawalTxnId = withdrawFromCustomer(dto.getUserId(), dto.getTotalPrice(), dto);
+//        String withdrawalTxnId = withdrawFromCustomer(dto.getUserId(), dto.getTotalPrice(), dto);
 
         // Step 5: Deposit to merchant
-        depositToMerchant(dto.getMerchantId(), dto.getTotalPrice(), dto);
+//        depositToMerchant(dto.getMerchantId(), dto.getTotalPrice(), dto);
 
         // Step 6: Save order
         OrderEntity order = orderMapper.toEntity(dto);
         order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(LocalDateTime.now());
         order.setUpdatedAt(LocalDateTime.now());
-        order.setWithdrawalTxnId(withdrawalTxnId);
+//        order.setWithdrawalTxnId(withdrawalTxnId);
         order = orderRepo.save(order);
 
         for (OrderItemEntity item : order.getItems()) {
@@ -98,7 +98,7 @@ dto.setOrderNumber(maxOrderNumber+1);
         }
 
         // Step 7: Send notification
-        sendNotification(dto.getUserId(), dto.getMerchantId());
+//        sendNotification(dto.getUserId(), dto.getMerchantId());
 
         return orderMapper.toDto(order);
     }
@@ -131,6 +131,7 @@ dto.setOrderNumber(maxOrderNumber+1);
 
         // 5. Save updates
         orderRepo.save(order);
+        orderMessageSender.sendOrderPlacedEvent(order.getId());
 
         return order.getId();
     }
