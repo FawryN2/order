@@ -14,17 +14,20 @@ Stores high-level information about customer orders, including shipping, payment
 | Column                | Type        | Description                                               |
 | --------------------- | ----------- | --------------------------------------------------------- |
 | `id`                  | `uuid`      | Primary key (unique identifier for the order)             |
-| `order_number`        | `bigint`    | Public-facing unique order number                         |
-| `user_id`             | `uuid`      | ID of the user placing the order                          |
-| `shipping_address_id` | `text`      | Reference to the shipping address (from Shipping Service) |
-| `payment_method`      | `text`      | Payment method used (e.g. card, cash, etc.)               |
-| `status`              | `enum`      | Current order status (`PENDING`, `PAID`, `SHIPPED`, etc.) |
-| `total_price`         | `bigint`    | Total amount after item prices, discounts, and shipping   |
-| `discount_total`      | `bigint`    | Total discount applied to the order                       |
-| `shipping_cost`       | `bigint`    | Shipping fee for the order                                |
-| `coupon_id`           | `bigint`    | Optional coupon reference (from Coupon Service)           |
+| `order_number`        | `Long`    | Public-facing unique order number                         |
+| `user_id`             | `String`      | ID of the user placing the order                          |
+| `shipping_address_id` | `String`      | Reference to the shipping address (from Shipping Service) |
+| `payment_method`      | `String`      | Payment method used (e.g. card, cash, etc.)               |
+| `status`              | `String`      | Current order status (`PENDING`, `PAID`, `SHIPPED`, etc.) |
+| `total_price`         | `double`    | Total amount after item prices, discounts, and shipping   |
+| `discount_total`      | `double`    | Total discount applied to the order                       |
+| `shipping_cost`       | `double`    | Shipping fee for the order                                |
+| `couponName`           | `String`    | Optional coupon reference (from Coupon Service)          |
 | `created_at`          | `timestamp` | Timestamp when order was created                          |
 | `updated_at`          | `timestamp` | Timestamp of last order update                            |
+| `merchantId`          | `String` | merchantId                                                   |
+| `withdrawalTxnId`          | `String` | withdrawalTxnId                                         |
+| `items`          | `order` | Timestamp of last order update                                     |
 
 ---
 
@@ -36,12 +39,12 @@ Stores individual items included in each order, with price breakdown and discoun
 | ------------------ | --------- | -------------------------------------------------------------- |
 | `id`               | `uuid`    | Primary key (unique identifier for item record)                |
 | `order_id`         | `uuid`    | Foreign key referencing `orders.id`                            |
-| `product_id`       | `uuid`    | Product identifier (from Product Service)                      |
-| `product_name`     | `text`    | Name of the product at the time of order                       |
-| `unit_price`       | `decimal` | Price per unit before discount                                 |
+| `product_id`       | `String`    | Product identifier (from Product Service)                      |
+| `product_name`     | `String`    | Name of the product at the time of order                       |
+| `unit_price`       | `double` | Price per unit before discount                                 |
 | `quantity`         | `int`     | Number of units ordered                                        |
-| `discount_applied` | `decimal` | Discount amount applied to this line item                      |
-| `final_price`      | `decimal` | Total price = (`unit_price` × `quantity`) - `discount_applied` |
+| `discount_applied` | `double` | Discount amount applied to this line item                      |
+| `final_price`      | `double` | Total price = (`unit_price` × `quantity`) - `discount_applied` |
 
 
 
