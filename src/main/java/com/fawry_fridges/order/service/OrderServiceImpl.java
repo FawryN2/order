@@ -86,10 +86,10 @@ dto.setOrderNumber(maxOrderNumber+1);
 
         // Step 6: Save order
         OrderEntity order = orderMapper.toEntity(dto);
-        order.setStatus(OrderStatus.CONFIRMED);
+        order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(LocalDateTime.now());
         order.setUpdatedAt(LocalDateTime.now());
-//        order.setWithdrawalTxnId(withdrawalTxnId);
+        order.setWithdrawalTxnId(withdrawalTxnId);
         order = orderRepo.save(order);
 
         for (OrderItemEntity item : order.getItems()) {
@@ -104,25 +104,37 @@ dto.setOrderNumber(maxOrderNumber+1);
     }
 
     @Override
-    public String checkout(OrderDto order, String userId, String shippingAddressId, String paymentMethod, Long couponId) {
+    @Transactional
+    public String checkout(String orderId, String userId, String shippingAddressId, String paymentMethod, Long couponId) {
+        // 1. Fetch existing order
+        OrderEntity order = orderRepo.findById(orderId)
+                .orElseThrow(() -> new OrderApiException("Order not found with id: " + orderId));
+
         if (order.getItems() == null || order.getItems().isEmpty()) {
             throw new OrderApiException("Cart is empty");
         }
 
-        // Calculate total price
+        // 2. Apply coupon logic
         double couponPercent = 0;
-        if (order.getCouponId() != null && !order.getCouponId().trim().isEmpty()) {
-            couponPercent = getCouponPercent(order);
+        if (order.getCouponName() != null && !order.getCouponName().trim().isEmpty()) {
+            couponPercent = getCouponPercent(orderMapper.toDto(order));
         }
+      OrderDto orderDto =  orderMapper.toDto(order);
+        // 3. Calculate total price
+        double totalPrice = orderTotalPrice(orderDto);
+        double discountedPrice = totalPrice - (couponPercent / 100 * totalPrice);
+        order.setTotalPrice(discountedPrice);
 
-        orderTotalPrice(order);
-        double orderPriceAfterCoupon = order.getTotalPrice() - (couponPercent * order.getTotalPrice());
-        order.setTotalPrice(orderPriceAfterCoupon);
+        // 4. Update order status and fields
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setUpdatedAt(LocalDateTime.now());
 
-        // Optionally call createOrder() to finalize
-        OrderDto createdOrder = createOrder(order);
-        return createdOrder.getId();
+        // 5. Save updates
+        orderRepo.save(order);
+
+        return order.getId();
     }
+
 
     @Override
     public Page<OrderDto> searchOrders(String customerId, LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
@@ -154,7 +166,7 @@ dto.setOrderNumber(maxOrderNumber+1);
         }
     }
 
-    private void orderTotalPrice(OrderDto orderDto) {
+    private double orderTotalPrice(OrderDto orderDto) {
         double itemsTotal = orderDto.getItems().stream()
                 .mapToDouble(OrderItemDto::getFinalPrice)
                 .sum();
@@ -166,6 +178,8 @@ dto.setOrderNumber(maxOrderNumber+1);
                 .sum();
 
         orderDto.setDiscountTotal(discountTotal);
+
+        return orderDto.getTotalPrice(); // ✅ now it returns the calculated total
     }
 
 

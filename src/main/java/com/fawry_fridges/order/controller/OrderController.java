@@ -56,7 +56,7 @@ public class OrderController {
 
         try {
             String orderId = orderService.checkout(
-                    request.getOrder(),
+                    request.getOrderId(),
                     request.getUserId(),
                     request.getShippingAddressId(),
                     request.getPaymentMethod(),

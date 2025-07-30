@@ -13,7 +13,7 @@ public interface OrderService {
    OrderDto getOrderById(String orderId);
    OrderDto createOrder(OrderDto orderDto);
    Page<OrderDto> searchOrders(String userId, LocalDateTime from, LocalDateTime to, Pageable pageable);
-   String checkout(OrderDto order, String userId, String shippingAddressId, String paymentMethod, Long couponId);
+   String checkout(String orderId, String userId, String shippingAddressId, String paymentMethod, Long couponId);
 //   List<Object> displayProducts();
 
 }

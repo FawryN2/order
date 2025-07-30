@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class CheckoutRequest {
-    private OrderDto order;
+    private String orderId;
     private String userId;
     private String shippingAddressId;
     private String paymentMethod;
