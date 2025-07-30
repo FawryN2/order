@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class OrderItemDto {
 
     private String id;
-    private OrderEntity order;
+//    private OrderEntity order;
     private String productId;
     private String productName;
     private double unitPrice;

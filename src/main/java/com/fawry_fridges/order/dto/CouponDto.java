@@ -14,7 +14,6 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class CouponDto {
 
-    private String id;
-    private String name;
-    private Double percent;
+    private String message;
+    private Double discount;
 }

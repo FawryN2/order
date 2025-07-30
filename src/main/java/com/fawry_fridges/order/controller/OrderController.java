@@ -15,7 +15,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -98,10 +100,8 @@ public class OrderController {
     @GetMapping("/search")
     public ResponseEntity<Page<OrderDto>> searchOrders(
             @RequestParam String customerId,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -110,25 +110,19 @@ public class OrderController {
         log.info("Searching orders for customer: {}, page: {}, size: {}", customerId, page, size);
 
         try {
-            // Set default date range if not provided
-            if (startDate == null) {
-                startDate = LocalDateTime.now().minusMonths(6); // Last 6 months
-            }
-            if (endDate == null) {
-                endDate = LocalDateTime.now();
-            }
+            if (startDate == null) startDate = LocalDate.now().minusMonths(6);
+            if (endDate == null) endDate = LocalDate.now();
 
-            // Create sort object
-            Sort.Direction direction = sortDirection.equalsIgnoreCase("asc")
-                    ? Sort.Direction.ASC : Sort.Direction.DESC;
-            Sort sort = Sort.by(direction, sortBy);
+            LocalDateTime from = startDate.atStartOfDay();
+            LocalDateTime to = endDate.atTime(LocalTime.MAX);
+            log.info("Searching from {} to {} for customer {}", from, to, customerId);
 
-            // Create pageable
-            Pageable pageable = PageRequest.of(page, size, sort);
+            Sort.Direction direction = sortDirection.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+            Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
+            Page<OrderDto> orders = orderService.searchOrders(customerId, from, to, pageable);  // customerId will be used as userId
 
-            Page<OrderDto> orders = orderService.searchOrders(customerId, startDate, endDate, pageable);
+//            Page<OrderDto> orders = orderService.searchOrders(customerId, from, to, pageable);
 
-            log.info("Found {} orders for customer: {}", orders.getTotalElements(), customerId);
             return ResponseEntity.ok(orders);
         } catch (Exception e) {
             log.error("Failed to search orders: {}", e.getMessage());

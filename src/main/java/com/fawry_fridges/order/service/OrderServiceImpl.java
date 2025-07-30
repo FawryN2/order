@@ -1,6 +1,5 @@
 package com.fawry_fridges.order.service;
 
-import com.fawry_fridges.order.clients.ProductClient;
 import com.fawry_fridges.order.dto.CouponDto;
 import com.fawry_fridges.order.dto.NotificationDto;
 import com.fawry_fridges.order.dto.OrderDto;
@@ -16,27 +15,31 @@ import com.fawry_fridges.order.error.OrderApiException;
 import com.fawry_fridges.order.mapper.OrderMapper;
 import com.fawry_fridges.order.repo.OrderItemRepo;
 import com.fawry_fridges.order.repo.OrderRepo;
+import com.fawry_fridges.order.service.impl.OrderService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.OrderService {
+public class OrderServiceImpl implements OrderService {
 
     private final OrderRepo orderRepo;
     private final OrderItemRepo orderItemRepository;
-    private final ProductClient productClient;
     private final RestTemplate restTemplate;
 
 
@@ -51,12 +54,16 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
 
     @Value("${bankService.url}")
     private String bankService;
+    @Autowired
+    private OrderMapper orderMapper;
 
     // ------------------ Public API ----------------------
 
     @Override
     @Transactional
     public OrderDto createOrder(OrderDto dto) {
+        Long maxOrderNumber = orderRepo.findMaxOrderNumber();
+dto.setOrderNumber(maxOrderNumber+1);
         validateOrder(dto);
 
         // Step 1: Check availability of each item
@@ -78,11 +85,11 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         depositToMerchant(dto.getMerchantId(), dto.getTotalPrice(), dto);
 
         // Step 6: Save order
-        OrderEntity order = OrderMapper.INSTANCE.toEntity(dto);
+        OrderEntity order = orderMapper.toEntity(dto);
         order.setStatus(OrderStatus.CONFIRMED);
         order.setCreatedAt(LocalDateTime.now());
         order.setUpdatedAt(LocalDateTime.now());
-        order.setWithdrawalTxnId(withdrawalTxnId);
+//        order.setWithdrawalTxnId(withdrawalTxnId);
         order = orderRepo.save(order);
 
         for (OrderItemEntity item : order.getItems()) {
@@ -93,7 +100,7 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
         // Step 7: Send notification
         sendNotification(dto.getUserId(), dto.getMerchantId());
 
-        return OrderMapper.INSTANCE.toDto(order);
+        return orderMapper.toDto(order);
     }
 
     @Override
@@ -120,18 +127,24 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
     @Override
     public Page<OrderDto> searchOrders(String customerId, LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
         Page<OrderEntity> page = orderRepo.findByUserIdAndCreatedAtBetween(customerId, startDate, endDate, pageable);
-        return page.map(OrderMapper.INSTANCE::toDto);
+        return page.map(orderMapper::toDto);
     }
 
     @Override
     public OrderDto getOrderById(String orderId) {
-        try {
-            OrderEntity order = orderRepo.getReferenceById(orderId);
-            return OrderMapper.INSTANCE.toDto(order);
-        } catch (Exception e) {
+        log.info("Trying to find order with ID: {}", orderId);
+        Optional<OrderEntity> optionalOrder = orderRepo.findById(orderId);
+
+        if (optionalOrder.isEmpty()) {
+            log.error("Order with ID {} not found in DB", orderId);
             throw new OrderApiException("No order with this id");
         }
+
+        log.info("Order found: {}", optionalOrder.get());
+        return orderMapper.toDto(optionalOrder.get());
     }
+
+
 
     // ------------------ Private Helpers ----------------------
 
@@ -175,8 +188,16 @@ public class OrderServiceImpl implements com.fawry_fridges.order.service.impl.Or
     private double getCouponPercent(OrderDto dto) {
         if (dto.getCouponId() != null && !dto.getCouponId().trim().isEmpty()) {
             try {
-                CouponDto couponDto = restTemplate.getForObject(couponUrl + "/consume" + dto.getCouponId(), CouponDto.class);
-                return couponDto != null ? couponDto.getPercent() : 0;
+                String url = UriComponentsBuilder.fromHttpUrl(couponUrl + "/consume")
+                        .queryParam("code", dto.getCouponId())
+                        .queryParam("orderId", dto.getId()) // assuming dto.getId() returns order UUID
+                        .queryParam("orderTotal", dto.getTotalPrice())
+                        .toUriString();
+
+                ResponseEntity<CouponDto> response = restTemplate.postForEntity(url, null, CouponDto.class);
+
+                CouponDto couponDto = response.getBody();
+                return couponDto != null ? couponDto.getDiscount() : 0;
             } catch (RestClientException e) {
                 throw new OrderApiException("Failed to process coupon: " + e.getMessage());
             }

@@ -40,7 +40,7 @@ public class OrderEntity {
 
     private double shippingCost;
 
-    private Long couponId;
+    private String couponId;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
