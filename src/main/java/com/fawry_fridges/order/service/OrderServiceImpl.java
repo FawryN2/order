@@ -67,29 +67,23 @@ dto.setOrderNumber(maxOrderNumber+1);
         validateOrder(dto);
 
         // Step 1: Check availability of each item
-//        checkProductAvailability(dto.getItems());
+        checkProductAvailability(dto.getItems());
 
         // Step 2: Consume stock for each item
-//        consumeStock(dto);
+        consumeStock(dto);
 
         // Step 3: Apply coupon (consume it if valid)
         String couponId = dto.getCouponId();
         if (couponId != null && !couponId.trim().isEmpty()) {
-//            consumeCoupon(couponId, dto.getUserId(), dto.getId());
+            consumeCoupon(couponId, dto.getUserId(), dto.getId());
         }
 
-        // Step 4: Withdraw from customer
-//        String withdrawalTxnId = withdrawFromCustomer(dto.getUserId(), dto.getTotalPrice(), dto);
 
-        // Step 5: Deposit to merchant
-//        depositToMerchant(dto.getMerchantId(), dto.getTotalPrice(), dto);
-
-        // Step 6: Save order
+        // Step 4: Save order
         OrderEntity order = orderMapper.toEntity(dto);
         order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(LocalDateTime.now());
         order.setUpdatedAt(LocalDateTime.now());
-//        order.setWithdrawalTxnId(withdrawalTxnId);
         order = orderRepo.save(order);
 
         for (OrderItemEntity item : order.getItems()) {
@@ -97,8 +91,6 @@ dto.setOrderNumber(maxOrderNumber+1);
             orderItemRepository.save(item);
         }
 
-        // Step 7: Send notification
-//        sendNotification(dto.getUserId(), dto.getMerchantId());
 
         return orderMapper.toDto(order);
     }
@@ -106,7 +98,6 @@ dto.setOrderNumber(maxOrderNumber+1);
     @Override
     @Transactional
     public String checkout(String orderId, String userId, String shippingAddressId, String paymentMethod, Long couponId) {
-        // 1. Fetch existing order
         OrderEntity order = orderRepo.findById(orderId)
                 .orElseThrow(() -> new OrderApiException("Order not found with id: " + orderId));
 
@@ -114,27 +105,38 @@ dto.setOrderNumber(maxOrderNumber+1);
             throw new OrderApiException("Cart is empty");
         }
 
-        // 2. Apply coupon logic
+        // Apply coupon
         double couponPercent = 0;
         if (order.getCouponName() != null && !order.getCouponName().trim().isEmpty()) {
             couponPercent = getCouponPercent(orderMapper.toDto(order));
         }
-      OrderDto orderDto =  orderMapper.toDto(order);
-        // 3. Calculate total price
+
+        OrderDto orderDto = orderMapper.toDto(order);
         double totalPrice = orderTotalPrice(orderDto);
         double discountedPrice = totalPrice - (couponPercent / 100 * totalPrice);
         order.setTotalPrice(discountedPrice);
 
-        // 4. Update order status and fields
+        // Withdraw from user
+        String withdrawalTxnId = withdrawFromCustomer(userId, discountedPrice, orderDto);
+        order.setWithdrawalTxnId(withdrawalTxnId);
+
+        // Deposit to merchant
+        depositToMerchant(order.getMerchantId(), discountedPrice, orderDto);
+
+        // Send notification
+        sendNotification(userId, order.getMerchantId());
+
+        // Send to RabbitMQ
+        orderMessageSender.sendOrderPlacedEvent(order.getId());
+
+        // Confirm order
         order.setStatus(OrderStatus.CONFIRMED);
         order.setUpdatedAt(LocalDateTime.now());
-
-        // 5. Save updates
         orderRepo.save(order);
-        orderMessageSender.sendOrderPlacedEvent(order.getId());
 
         return order.getId();
     }
+
 
 
     @Override
